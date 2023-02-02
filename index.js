@@ -30,14 +30,14 @@ const e = require("express");
         + " decimalpoints numeric(13,1) )"
     )
 
-    const existingColumnNames = []
     const existingColumns = await client.query({
             text: "SELECT column_name, data_type FROM information_schema.columns "
                     + "WHERE table_schema = $1 "
                     + "AND table_name = $2",
             values: [ "public", "epic-task-scon" ],
         });
-    existingColumnNames.push(...existingColumns.rows.map(r => r.column_name))
+
+    let existingColumnNames = existingColumns.rows.map(r => r.column_name)
 
     console.log(existingColumnNames)
     app.use(express.json())
@@ -60,18 +60,25 @@ const e = require("express");
                 const columnNameLowerCase = col.toLowerCase();
                 // append new column
                 if (!existingColumnNames.includes(columnNameLowerCase)) {
-                    // please upate
-                    await client.query({
+                    // should update since there might be another pod running
+                    const existingColumns = await client.query({
                         text: "SELECT column_name, data_type FROM information_schema.columns "
                                 + "WHERE table_schema = $1 "
                                 + "AND table_name = $2",
                         values: [ "public", "epic-task-scon" ],
                     });
-                    console.log("adding")
-                    await client.query({
-                        text: `ALTER TABLE \"epic-task-scon\" ADD COLUMN ${columnNameLowerCase} VARCHAR;`,
-                    });
-                    existingColumnNames.push(columnNameLowerCase)
+                    existingColumnNames = existingColumns.rows.map(r => r.column_name)
+                    if (!existingColumnNames.includes(columnNameLowerCase)) {
+                        console.log("adding")
+                        try {
+                            await client.query({
+                                text: `ALTER TABLE \"epic-task-scon\" ADD COLUMN ${columnNameLowerCase} VARCHAR;`,
+                            });
+                            existingColumnNames.push(columnNameLowerCase)
+                        } catch (error) {
+                            // already exist
+                        }
+                    }
                 }
             }
         }
